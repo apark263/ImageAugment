@@ -5,127 +5,58 @@
 #include <functional>
 #include <fstream>
 #include <iostream>
-
+#include <string>
+#include <sstream>
+#include <map>
+#include "media.hpp"
 
 using namespace cv;
 using namespace std;
 typedef function<void (Mat &, Mat &, void *)> transform_func;
-typedef Rect_<float> Rectf;
+typedef map<string, int> KVmap;
 
-Rectf proposeROI(Size2f origSize, float areaScale, float aspectRatio);
-
-void flipImage(Mat &inMat, Mat &outMat, void *varg) {
-    int *doFlip = static_cast<int *>(varg);
-    if (*doFlip != 0) {
-        flip(inMat, outMat, 1);
-    } else {
-        outMat = inMat;
+KVmap parseFile(char *filename) {
+    ifstream ifs;
+    ifs.open(filename);
+    KVmap dx;
+    while (!ifs.eof()) {
+        string key, val;
+        getline(ifs, key, ',');
+        getline(ifs, val);
+        if (!key.empty()) {
+            dx.insert(pair<string, int> (key, atoi(val.c_str())));
+        }
     }
-}
-
-void cropImage(Mat &inMat, Mat &outMat, void *varg) {
-    Rectf *roi = static_cast<Rectf *>(varg);
-    outMat = inMat(*roi);
-}
-
-void adjustImage(Mat &inMat, Mat &outMat, void *varg) {
-    float *adjustVals = static_cast<float *>(varg);
-    inMat.convertTo(inMat, -1, 1.0f + adjustVals[0], adjustVals[1]);
-}
-
-void rotateImage(Mat &inMat, Mat &outMat, void *varg) {
-    float angle = *static_cast<float *> (varg);
-    if (angle == 0.0f) {
-        outMat = inMat;
-        return;
-    }
-    warpAffine( inMat, outMat,
-                getRotationMatrix2D( Point2f(inMat.size()) * 0.5f, angle, 1.0f ),
-                inMat.size() );
-}
-
-void resizeImage(Mat &inMat, Mat &outMat, void *varg) {
-    Size2f *finalSize = static_cast<Size2f *>(varg);
-    int interp_method = inMat.size().area() < finalSize->area() ? CV_INTER_AREA : CV_INTER_CUBIC;
-    resize(inMat, outMat, *finalSize, 0, 0, interp_method);
-}
-
-Rectf proposeROI(Size2f origSize, float minScale, float minAspectRatio, RNG& rng) {
-    // oAR and cAR are the original and crop aspect ratios, respectively
-    float oAR = origSize.width / origSize.height;
-    float cAR = rng.uniform(minAspectRatio, 1.0f / minAspectRatio);
-    float maxScale = cAR > oAR ? oAR / cAR : cAR / oAR;
-
-    // Now get an allowable box size fitting within the original image
-    Size2f propSize(origSize.width, origSize.width / cAR);
-    propSize = propSize * sqrt(rng.uniform(minScale, maxScale));
-
-    // Now randomly place that box
-    float x = rng.uniform(0.0f, origSize.width - propSize.width);
-    float y = rng.uniform(0.0f, origSize.height - propSize.height);
-    return Rectf(Point2f(x, y), propSize);
+    ifs.close();
+    return dx;
 }
 
 int main( int argc, char** argv ) {
+    RNG _rng(time(0));
+
+    ImageParams ip;
+
+
     Mat orig = imread(argv[1], CV_LOAD_IMAGE_COLOR);
     Size2f origSize(orig.cols, orig.rows);
     Size2f finalSize(224, 224);
-    RNG _rng(time(0));
-    bool deterministic = false;
-    if(! orig.data )                              // Check for invalid input
-    {
-        cout <<  "Could not open or find the image" << std::endl ;
-        return -1;
+    ImageTransform itt(finalSize);
+
+    if (argc > 2) {
+        ip.set_keys(parseFile(argv[2]));
     }
 
-    int flipRange = 1;
-    float minScale = 0.08;
-    float minAspectRatio = 0.75;
-    float contrastRange = 0.0;
-    float brightnessRange = 0.0;
-    float angleRange = 20;
-    if (argc == 4)
-    {
-        contrastRange = atof(argv[2]);
-        brightnessRange = 127 * atof(argv[3]);
+
+    for (int i = 0; i < 10; i++) {
+        Mat outMat;
+        char fname[256];
+        sprintf(fname, "example_%02d.jpg", i);
+        itt.randomize(_rng, origSize, ip);
+        cout << origSize << endl;
+        itt.dump();
+        itt.transform(orig, outMat);
+        imwrite(fname, outMat);
     }
-    int do_flip = 0;
-    float scale = 1.0;
-    float contrast = 1.0;
-    float brightness = 0.0;
-    float angle = 0.0;
-    Rectf cropbox(Point2f(), origSize);
-    if (!deterministic)
-    {
-        do_flip     = _rng.uniform(0, flipRange);
-        contrast    = _rng.uniform(-contrastRange, contrastRange);
-        brightness  = _rng.uniform(-brightnessRange, brightnessRange);
-        angle       = _rng.uniform(-angleRange, angleRange);
-        cropbox     = proposeROI(origSize, minScale, minAspectRatio, _rng);
-    }
-    cout << "Original Size " << origSize << endl;
-    cout << "Rect " << cropbox << " " << cropbox.width << " " << cropbox.height << endl;
-    cout << "Contrast " << contrast << endl;
-    cout << "Scale " << scale << endl;
-    cout << "brightness " << brightness << endl;
-    cout << "aspectRatio " << (cropbox.width / cropbox.height) << endl;
-    cout << "angle " << angle << endl;
 
-    Mat rotatedImg, adjustedImg;
-    Mat flippedImg, resizedImg;
-    rotateImage(orig, rotatedImg, (void *) &angle);
-    cout << "RotRect " << rotatedImg.rows << " " << rotatedImg.cols << endl;
-    cropImage(rotatedImg, adjustedImg, (void *) &cropbox);
-    flipImage(adjustedImg, flippedImg, (void *) &do_flip);
-    float adjustParams[2] = {contrast, brightness};
-    adjustImage(flippedImg, flippedImg, (void *) &adjustParams);
-    resizeImage(flippedImg, resizedImg, (void *) &finalSize);
-
-
-    namedWindow( "Display window", WINDOW_AUTOSIZE );
-    imshow( "Display window", orig );
-    namedWindow( "Adjusted window", WINDOW_AUTOSIZE );
-    imshow( "Adjusted window", resizedImg );
-    waitKey(0);
     return 0;
 }
