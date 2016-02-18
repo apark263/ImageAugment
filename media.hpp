@@ -1,4 +1,5 @@
 #include <stdexcept>
+#include <random>
 
 using namespace std;
 using namespace cv;
@@ -108,7 +109,9 @@ public:
         _ip_matchAR         = ip["matchAspectRatio"];
         _ip_flipRange       = ip["flipRange"];
         // Scalar pixel_mean(ip["B_mean"], ip["G_mean"], ip["R_mean"]);
-
+        default_random_engine generator;
+        uniform_real_distribution<float> distribution(0.0, 1.0);
+        _rng = std::bind(distribution, generator);
     }
 
     // This function sets the transform params according to the ranges given by ImageParams
@@ -214,5 +217,6 @@ public:
     int   _ip_fixedScale;
     int   _ip_matchAR;
     int   _ip_flipRange;
+    bind<uniform_real_distribution<float> &, default_random_engine> _rng;
 };
 
