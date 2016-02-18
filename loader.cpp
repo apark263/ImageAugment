@@ -41,7 +41,7 @@ int main( int argc, char** argv ) {
         ip.set_keys(parseFile(argv[2]));
     }
 
-    ImageTransformer itt(finalSize, ip);
+    Image itt(ip);
 
     for (int i = 0; i < 10; i++) {
         Mat outMat;

@@ -89,10 +89,10 @@ public:
 };
 
 
-class ImageTransformer {
+class Image {
 public:
-    ImageTransformer(Size2f outSize, ImageParams &ip)
-    : _outSize(outSize), _flip(0),
+    Image(ImageParams &ip)
+    : _outSize(ip["width"], ip["height"]), _flip(0),
     _contrast(0), _brightness(0), _angle(0), _cropbox(Rectf()),
     _ip_minAR(1.0), _ip_minScale(1.0), _ip_contrastRange(0.0),
     _ip_brightnessRange(0.0), _ip_angleRange(0.0), _ip_cropRange(0.0),
@@ -143,22 +143,6 @@ public:
         c_xy += c_offset * _ip_cropRange;
 
         _cropbox = Rectf((Point2f) c_xy, (Size2f) c_sz);
-        // if (origAR < 1) {
-        //     _cropbox.width = inSize.width * scale;
-        //     _cropbox.height = _cropbox.width / cropAR;
-        // } else {
-        //     _cropbox.height = inSize.height * scale;
-        //     _cropbox.width = _cropbox.height * cropAR;
-        // }
-
-        // Size2f border = inSize - _cropbox.size();
-        // _cropbox.x = border.width / 2;
-        // _cropbox.y = border.height / 2;
-        // border.width = _cropbox.x * _ip_cropRange;
-        // border.height = _cropbox.y * _ip_cropRange;
-
-        // _cropbox.x += rng.uniform(-border.width, border.width);
-        // _cropbox.y += rng.uniform(-border.height, border.height);
     }
 
     void flipImage(Mat &inMat, Mat &outMat) {
