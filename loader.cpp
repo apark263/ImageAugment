@@ -48,8 +48,8 @@ int main( int argc, char** argv ) {
         char fname[256];
         sprintf(fname, "example_%02d.jpg", i);
         itt.randomize(_rng, origSize);
-        cout << origSize << endl;
-        itt.dump();
+        cout << origSize <<  " " << itt._rng() << endl;
+        // itt.dump();
         itt.transform(orig, outMat);
         imwrite(fname, outMat);
     }

@@ -110,16 +110,16 @@ public:
         _ip_flipRange       = ip["flipRange"];
         // Scalar pixel_mean(ip["B_mean"], ip["G_mean"], ip["R_mean"]);
         default_random_engine generator;
-        uniform_real_distribution<float> distribution(0.0, 1.0);
+        uniform_real_distribution<float> distribution(-1.0, 1.0);
         _rng = std::bind(distribution, generator);
     }
 
     // This function sets the transform params according to the ranges given by ImageParams
-    void randomize(RNG &rng, Size2f &inSize) {
-        _flip       = rng.uniform(0, _ip_flipRange);
-        _contrast   = rng.uniform(-_ip_contrastRange, _ip_contrastRange);
-        _brightness = rng.uniform(-_ip_brightnessRange, _ip_brightnessRange);
-        _angle      = rng.uniform(-_ip_angleRange, _ip_angleRange);
+    void randomize(Size2f &inSize) {
+        _flip       = _rng() < 0 ? 0 : 1;
+        _contrast   = _rng() * _ip_contrastRange;
+        _brightness = _rng() * _ip_brightnessRange;
+        _angle      = _rng() * _ip_angleRange;
 
         // Now do the cropbox
         float scale, origAR, cropAR;
@@ -136,13 +136,13 @@ public:
         }
 
         Vec2f c_sz(inSize.width, inSize.height);
-        Vec2f c_xy = c_sz;
         c_sz[portrait] = c_sz[!portrait] * (portrait ? 1 / cropAR : cropAR);
         c_sz *= scale;
 
         // This is the border size (and center offset)
+        Vec2f c_xy(inSize.width, inSize.height);
         c_xy = (c_xy - c_sz) / 2.0;
-        Vec2f c_offset(rng.uniform(-c_xy[0], c_xy[0]), rng.uniform(-c_xy[1], c_xy[1]));
+        Vec2f c_offset(_rng() * c_xy[0], _rng() * c_xy[1]);
         c_xy += c_offset * _ip_cropRange;
 
         _cropbox = Rectf((Point2f) c_xy, (Size2f) c_sz);
@@ -217,6 +217,6 @@ public:
     int   _ip_fixedScale;
     int   _ip_matchAR;
     int   _ip_flipRange;
-    bind<uniform_real_distribution<float> &, default_random_engine> _rng;
+    std::function<float()> _rng;
 };
 
