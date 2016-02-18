@@ -110,21 +110,37 @@ public:
         _ip_flipRange       = ip["flipRange"];
         // Scalar pixel_mean(ip["B_mean"], ip["G_mean"], ip["R_mean"]);
         default_random_engine generator;
-        uniform_real_distribution<float> distribution(-1.0, 1.0);
+        uniform_real_distribution<float> distribution(0.0, 1.0);
         _rng = std::bind(distribution, generator);
+    }
+
+    float urand(float low, float high) {
+        return _rng() * (high - low) + low;
+    }
+
+    float urand(float high) {
+        return urand(0.0, high);
+    }
+
+    float urand_zcent(float high) {
+        return urand(-high, high);
+    }
+
+    int urand_binary() {
+        return _rng() > 0.5 ? 1 : 0;
     }
 
     // This function sets the transform params according to the ranges given by ImageParams
     void randomize(Size2f &inSize) {
-        _flip       = _rng() < 0 ? 0 : 1;
-        _contrast   = _rng() * _ip_contrastRange;
-        _brightness = _rng() * _ip_brightnessRange;
-        _angle      = _rng() * _ip_angleRange;
+        _flip       = urand_binary();
+        _contrast   = urand_zcent(_ip_contrastRange);
+        _brightness = urand_zcent(_ip_brightnessRange);
+        _angle      = urand_zcent(_ip_angleRange);
 
         // Now do the cropbox
         float scale, origAR, cropAR;
         origAR = inSize.width / inSize.height;
-        cropAR = _ip_matchAR ? origAR : rng.uniform(_ip_minAR, 1.0f / _ip_minAR);
+        cropAR = _ip_matchAR ? origAR : urand(_ip_minAR, 1.0f / _ip_minAR);
         bool portrait = origAR < 1;
 
         if (_ip_fixedScale != 0) {
@@ -132,7 +148,7 @@ public:
             scale = min(_outSize.width, _outSize.height) / _ip_fixedScale;
         } else {
             float maxScale = cropAR > origAR ? origAR / cropAR : cropAR / origAR;
-            scale = sqrt(rng.uniform(min(_ip_minScale, maxScale), maxScale));
+            scale = sqrt(urand(min(_ip_minScale, maxScale), maxScale));
         }
 
         Vec2f c_sz(inSize.width, inSize.height);
@@ -142,7 +158,7 @@ public:
         // This is the border size (and center offset)
         Vec2f c_xy(inSize.width, inSize.height);
         c_xy = (c_xy - c_sz) / 2.0;
-        Vec2f c_offset(_rng() * c_xy[0], _rng() * c_xy[1]);
+        Vec2f c_offset(urand_zcent(c_xy[0]), urand_zcent(c_xy[1]));
         c_xy += c_offset * _ip_cropRange;
 
         _cropbox = Rectf((Point2f) c_xy, (Size2f) c_sz);

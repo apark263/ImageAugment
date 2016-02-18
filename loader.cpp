@@ -32,7 +32,6 @@ KVmap parseFile(char *filename) {
 }
 
 int main( int argc, char** argv ) {
-    RNG _rng(time(0));
     ImageParams ip;
     Mat orig = imread(argv[1], CV_LOAD_IMAGE_COLOR);
     Size2f origSize(orig.cols, orig.rows);
@@ -47,7 +46,7 @@ int main( int argc, char** argv ) {
         Mat outMat;
         char fname[256];
         sprintf(fname, "example_%02d.jpg", i);
-        itt.randomize(_rng, origSize);
+        itt.randomize(origSize);
         cout << origSize <<  " " << itt._rng() << endl;
         // itt.dump();
         itt.transform(orig, outMat);
