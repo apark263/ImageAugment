@@ -33,7 +33,7 @@ public:
     ImageParams()
     : MediaParams(IMAGE) {
         _augParams = {{"channelCount", 3}, {"height", 224}, {"width", 224},
-                      {"cropRange", 0}, {"flipRange", 1},
+                      {"cropRange", 0}, {"doFlip", 1},
                       {"minScale", 100}, {"minAspectRatio", 100},
                       {"contrastRange", 0}, {"brightnessRange", 0},
                       {"angleRange", 0}, {"fixedScale", 0},
@@ -93,13 +93,12 @@ public:
 class Image {
 public:
     Image(ImageParams &ip)
-    : _outSize(ip["width"], ip["height"]), _flip(0),
-    _contrast(0), _brightness(0), _angle(0), _cropbox(Rectf()),
-    _ip_minAR(1.0), _ip_minScale(1.0), _ip_contrastRange(0.0),
+    : _outSize(ip["width"], ip["height"]),
+    _ip_minAR(ip["minAspectRatio"] / 100.0f), _ip_minScale(1.0), _ip_contrastRange(0.0),
     _ip_brightnessRange(0.0), _ip_angleRange(0.0), _ip_cropRange(0.0),
-    _ip_fixedScale(0), _ip_matchAR(0), _ip_flipRange(1)
+    _ip_fixedScale(0), _ip_matchAR(0), _ip_doFlip(0)
   {
-        _ip_minAR           = ip["minAspectRatio"] / 100.0f;
+        // _ip_minAR           = ip["minAspectRatio"] / 100.0f;
         _ip_minScale        = ip["minScale"] / 100.0f;
         _ip_contrastRange   = ip["contrastRange"] / 100.0f;
         _ip_brightnessRange = ip["brightnessRange"] / 100.0f;
@@ -107,8 +106,7 @@ public:
         _ip_cropRange       = ip["cropRange"] / 100.0f;
         _ip_fixedScale      = ip["fixedScale"];
         _ip_matchAR         = ip["matchAspectRatio"];
-        _ip_flipRange       = ip["flipRange"];
-        // Scalar pixel_mean(ip["B_mean"], ip["G_mean"], ip["R_mean"]);
+        _ip_doFlip          = ip["doFlip"];
         default_random_engine generator;
         uniform_real_distribution<float> distribution(0.0, 1.0);
         _rng = std::bind(distribution, generator);
@@ -131,13 +129,45 @@ public:
     }
 
     // This function sets the transform params according to the ranges given by ImageParams
-    void randomize(Size2f &inSize) {
-        _flip       = urand_binary();
-        _contrast   = urand_zcent(_ip_contrastRange);
-        _brightness = urand_zcent(_ip_brightnessRange);
-        _angle      = urand_zcent(_ip_angleRange);
+    void transform(Mat &inMat, Mat &outMat) {
+        Size2f inSize = inMat.size();
+        Mat rotatedImg, croppedImg, flippedImg;
+
+        // Rotation
+        float angle = urand_zcent(_ip_angleRange);
+        if (angle != 0.0f) {
+            warpAffine( inMat, rotatedImg,
+                        getRotationMatrix2D( Point2f(inSize) * 0.5f, angle, 1.0f ),
+                        inSize );
+        } else {
+            rotatedImg = inMat;
+        }
 
         // Now do the cropbox
+        Rectf cropBox;
+        getCropBox(inSize, cropBox);
+        croppedImg = rotatedImg(cropBox);
+
+        // Flip
+        if (_ip_doFlip && urand_binary()) {
+            flip(croppedImg, flippedImg, 1);
+        } else {
+            flippedImg = croppedImg;
+        }
+
+        // contrast and brightness adjustment
+        float contrast = urand_zcent(_ip_contrastRange);
+        float brightness = urand_zcent(_ip_brightnessRange);
+        if (contrast != 0 || brightness != 0) {
+            flippedImg.convertTo(flippedImg, -1, 1.0f + contrast, 127.0 * brightness);
+        }
+
+        // Resize into final output
+        bool doEnlarge = flippedImg.size().area() / _outSize.area() > 1.0;
+        resize(flippedImg, outMat, _outSize, 0, 0, doEnlarge ? CV_INTER_AREA : CV_INTER_CUBIC);
+    }
+
+    void getCropBox(Size2f inSize, Rectf &cropBox) {
         float scale, origAR, cropAR;
         origAR = inSize.width / inSize.height;
         cropAR = _ip_matchAR ? origAR : urand(_ip_minAR, 1.0f / _ip_minAR);
@@ -161,67 +191,24 @@ public:
         Vec2f c_offset(urand_zcent(c_xy[0]), urand_zcent(c_xy[1]));
         c_xy += c_offset * _ip_cropRange;
 
-        _cropbox = Rectf((Point2f) c_xy, (Size2f) c_sz);
-    }
-
-    void flipImage(Mat &inMat, Mat &outMat) {
-        if (_flip != 0) {
-            flip(inMat, outMat, 1);
-        } else {
-            outMat = inMat;
-        }
-    }
-
-    void cropImage(Mat &inMat, Mat &outMat) {
-        outMat = inMat(_cropbox);
-    }
-
-    void adjustImage(Mat &inMat) {
-        if (_contrast != 0 || _brightness != 0) {
-            inMat.convertTo(inMat, -1, 1.0f + _contrast, 127.0 * _brightness);
-        }
-    }
-
-    void rotateImage(Mat &inMat, Mat &outMat) {
-        if (_angle == 0.0f) {
-            outMat = inMat;
-        } else {
-            warpAffine( inMat, outMat,
-                        getRotationMatrix2D( Point2f(inMat.size()) * 0.5f, _angle, 1.0f ),
-                        inMat.size() );
-        }
-    }
-
-    void resizeImage(Mat &inMat, Mat &outMat) {
-        int interp_method = inMat.size().area() < _outSize.area() ? CV_INTER_AREA : CV_INTER_CUBIC;
-        resize(inMat, outMat, _outSize, 0, 0, interp_method);
-    }
-
-    void transform(Mat &inMat, Mat &outMat) {
-        Mat rotatedImg, croppedImg, flippedImg;
-        rotateImage(inMat, rotatedImg);
-        cropImage(rotatedImg, croppedImg);
-        flipImage(croppedImg, flippedImg);
-        adjustImage(flippedImg);
-        resizeImage(flippedImg, outMat);
+        cropBox = Rectf((Point2f) c_xy, (Size2f) c_sz);
     }
 
     void dump() {
-         cout << "outSize " << _outSize << endl;
-         cout << "flip " << _flip << endl;
-         cout << "contrast " << _contrast << endl;
-         cout << "brightness " << _brightness << endl;
-         cout << "angle " << _angle << endl;
-         cout << "cropbox " << _cropbox << endl;
+        cout << "_outSize " << _outSize << endl;
+        cout << "_ip_minAR " << _ip_minAR << endl;
+        cout << "_ip_minScale " << _ip_minScale << endl;
+        cout << "_ip_contrastRange " << _ip_contrastRange << endl;
+        cout << "_ip_brightnessRange " << _ip_brightnessRange << endl;
+        cout << "_ip_angleRange " << _ip_angleRange << endl;
+        cout << "_ip_cropRange " << _ip_cropRange << endl;
+        cout << "_ip_fixedScale " << _ip_fixedScale << endl;
+        cout << "_ip_matchAR " << _ip_matchAR << endl;
+        cout << "_ip_doFlip " << _ip_doFlip << endl;
     }
 
 public:
     Size2f          _outSize;
-    int             _flip;
-    float           _contrast;
-    float           _brightness;
-    float           _angle;
-    Rectf           _cropbox;
 
     // These are parameters that define what type of augmentation is done
     float _ip_minAR;
@@ -232,7 +219,7 @@ public:
     float _ip_cropRange;
     int   _ip_fixedScale;
     int   _ip_matchAR;
-    int   _ip_flipRange;
+    int   _ip_doFlip;
     std::function<float()> _rng;
 };
 

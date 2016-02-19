@@ -46,9 +46,6 @@ int main( int argc, char** argv ) {
         Mat outMat;
         char fname[256];
         sprintf(fname, "example_%02d.jpg", i);
-        itt.randomize(origSize);
-        cout << origSize <<  " " << itt._rng() << endl;
-        // itt.dump();
         itt.transform(orig, outMat);
         imwrite(fname, outMat);
     }
