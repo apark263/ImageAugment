@@ -33,7 +33,7 @@ public:
     ImageParams()
     : MediaParams(IMAGE) {
         _augParams = {{"channelCount", 3}, {"height", 224}, {"width", 224},
-                      {"cropRange", 0}, {"doFlip", 1},
+                      {"cropRange", 0}, {"doFlip", 0},
                       {"minScale", 100}, {"minAspectRatio", 100},
                       {"contrastRange", 0}, {"brightnessRange", 0},
                       {"angleRange", 0}, {"fixedScale", 0},
@@ -94,19 +94,16 @@ class Image {
 public:
     Image(ImageParams &ip)
     : _outSize(ip["width"], ip["height"]),
-    _ip_minAR(ip["minAspectRatio"] / 100.0f), _ip_minScale(1.0), _ip_contrastRange(0.0),
-    _ip_brightnessRange(0.0), _ip_angleRange(0.0), _ip_cropRange(0.0),
-    _ip_fixedScale(0), _ip_matchAR(0), _ip_doFlip(0)
+      _ip_minAR(ip["minAspectRatio"] / 100.0f),
+      _ip_minScale(ip["minScale"] / 100.0f),
+      _ip_contrastRange(ip["contrastRange"] / 100.0f),
+      _ip_brightnessRange(ip["brightnessRange"] / 100.0f),
+      _ip_angleRange(ip["angleRange"]),
+      _ip_cropRange(ip["cropRange"] / 100.0f),
+      _ip_fixedScale(ip["fixedScale"]),
+      _ip_matchAR(ip["matchAspectRatio"]),
+      _ip_doFlip(ip["doFlip"])
   {
-        // _ip_minAR           = ip["minAspectRatio"] / 100.0f;
-        _ip_minScale        = ip["minScale"] / 100.0f;
-        _ip_contrastRange   = ip["contrastRange"] / 100.0f;
-        _ip_brightnessRange = ip["brightnessRange"] / 100.0f;
-        _ip_angleRange      = ip["angleRange"];
-        _ip_cropRange       = ip["cropRange"] / 100.0f;
-        _ip_fixedScale      = ip["fixedScale"];
-        _ip_matchAR         = ip["matchAspectRatio"];
-        _ip_doFlip          = ip["doFlip"];
         default_random_engine generator;
         uniform_real_distribution<float> distribution(0.0, 1.0);
         _rng = std::bind(distribution, generator);
