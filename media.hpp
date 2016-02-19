@@ -125,12 +125,28 @@ public:
         return _rng() > 0.5 ? 1 : 0;
     }
 
+    void decode(char* itemBuf, int itemSize, char* outBuf) {
+        Mat decodedImage = cv::imdecode(Mat(1, itemSize, CV_8UC3, itemBuf), CV_LOAD_IMAGE_COLOR);
+        Mat transformedImage;
+        transform(decodedImage, transformedImage);
+
+        int offset = (int) _outSize.area();
+        Mat ch_b(_outSize, CV_8U, outBuf + offset*0);
+        Mat ch_g(_outSize, CV_8U, outBuf + offset*1);
+        Mat ch_r(_outSize, CV_8U, outBuf + offset*2);
+        Mat channels[3] = {ch_b, ch_g, ch_r};
+
+        cv::split(transformedImage, channels);
+    }
+
     // This function sets the transform params according to the ranges given by ImageParams
     void transform(Mat &inMat, Mat &outMat) {
         Size2f inSize = inMat.size();
         Mat rotatedImg, croppedImg, flippedImg;
 
-        // Rotation
+        /*************
+        *  ROTATING  *
+        **************/
         float angle = urand_zcent(_ip_angleRange);
         if (angle != 0.0f) {
             warpAffine( inMat, rotatedImg,
@@ -140,26 +156,34 @@ public:
             rotatedImg = inMat;
         }
 
-        // Now do the cropbox
+        /*************
+        *  CROPPING  *
+        **************/
         Rectf cropBox;
         getCropBox(inSize, cropBox);
         croppedImg = rotatedImg(cropBox);
 
-        // Flip
+        /*************
+        *  FLIPPING  *
+        **************/
         if (_ip_doFlip && urand_binary()) {
             flip(croppedImg, flippedImg, 1);
         } else {
             flippedImg = croppedImg;
         }
 
-        // contrast and brightness adjustment
+        /**************************
+        *  LIGHTING PERTURBATION  *
+        ***************************/
         float contrast = urand_zcent(_ip_contrastRange);
         float brightness = urand_zcent(_ip_brightnessRange);
         if (contrast != 0 || brightness != 0) {
             flippedImg.convertTo(flippedImg, -1, 1.0f + contrast, 127.0 * brightness);
         }
 
-        // Resize into final output
+        /*************
+        *  RESIZING  *
+        *************/
         bool doEnlarge = flippedImg.size().area() / _outSize.area() > 1.0;
         resize(flippedImg, outMat, _outSize, 0, 0, doEnlarge ? CV_INTER_AREA : CV_INTER_CUBIC);
     }
