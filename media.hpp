@@ -1,6 +1,6 @@
 #include <stdexcept>
 #include <random>
-
+#include <chrono>
 using namespace std;
 using namespace cv;
 typedef Rect_<float> Rectf;
@@ -27,6 +27,19 @@ public:
     int                         _mtype;
 };
 
+float CPCA[3][3] = {{0.39731118,  0.70119634, -0.59200296},
+                    {-0.81698062, -0.02354167, -0.5761844},
+                    {0.41795513, -0.71257945, -0.56351045}};
+
+float CSTD[3][3] = {{19.72083305, 0, 0},
+                    {0, 37.09388853, 0},
+                    {0, 0, 121.78006099}};
+
+float GSCL[3][3] = {{0.114, 0.587, 0.299},
+                    {0.114, 0.587, 0.299},
+                    {0.114, 0.587, 0.299}};
+
+
 
 class ImageParams : public MediaParams {
 public:
@@ -39,6 +52,12 @@ public:
                       {"angleRange", 0}, {"fixedScale", 0},
                       {"R_mean", 104}, {"G_mean", 119}, {"B_mean", 127},
                       {"matchAspectRatio", 0}};
+        Mat cpca(3, 3, CV_32FC1, CPCA);
+        Mat cstd(3, 3, CV_32FC1, CSTD);
+        cpca *= cstd;
+        // _lgt = new Mat(3, 3, CV_32FC1, CPCA);
+        // Mat aa(3, 3, CV_32FC1, CSTD);
+        // (*_lgt) *= aa;
     }
 
     ImageParams(vector<string> keys, vector<int> vals)
@@ -87,6 +106,7 @@ public:
 
 public:
     map<string, int>            _augParams;
+    Mat* _lgt;
 };
 
 
@@ -104,7 +124,9 @@ public:
       _ip_matchAR(ip["matchAspectRatio"]),
       _ip_doFlip(ip["doFlip"])
   {
-        default_random_engine generator;
+        unsigned seed1 = std::chrono::system_clock::now().time_since_epoch().count();
+
+        default_random_engine generator(seed1);
         uniform_real_distribution<float> distribution(0.0, 1.0);
         _rng = std::bind(distribution, generator);
     }
@@ -145,23 +167,11 @@ public:
         Mat rotatedImg, croppedImg, flippedImg;
 
         /*************
-        *  ROTATING  *
-        **************/
-        float angle = urand_zcent(_ip_angleRange);
-        if (angle != 0.0f) {
-            warpAffine( inMat, rotatedImg,
-                        getRotationMatrix2D( Point2f(inSize) * 0.5f, angle, 1.0f ),
-                        inSize );
-        } else {
-            rotatedImg = inMat;
-        }
-
-        /*************
         *  CROPPING  *
         **************/
         Rectf cropBox;
         getCropBox(inSize, cropBox);
-        croppedImg = rotatedImg(cropBox);
+        croppedImg = inMat(cropBox).clone();
 
         /*************
         *  FLIPPING  *
@@ -171,21 +181,45 @@ public:
         } else {
             flippedImg = croppedImg;
         }
+        bool doEnlarge = flippedImg.size().area() / _outSize.area() > 1.0;
 
         /**************************
         *  LIGHTING PERTURBATION  *
         ***************************/
-        float contrast = urand_zcent(_ip_contrastRange);
-        float brightness = urand_zcent(_ip_brightnessRange);
-        if (contrast != 0 || brightness != 0) {
-            flippedImg.convertTo(flippedImg, -1, 1.0f + contrast, 127.0 * brightness);
-        }
+
+        float pxnoise[3];
+        pxnoise[0] = urand_zcent(0.5);
+        pxnoise[1] = urand_zcent(0.5);
+        pxnoise[2] = urand_zcent(0.5);
+        const Mat cpca(3, 3, CV_32FC1, CPCA);
+        Mat alphas(3, 1, CV_32FC1, pxnoise);
+        alphas = cpca * alphas;
+        Mat pixel = alphas.reshape(3, 1);
+        flippedImg = (flippedImg + pixel.at<Scalar_<float>>(0, 0));
+
+        // Brightness and saturation
+        float satbuf[3][3];
+        memcpy(satbuf, GSCL, 9 * sizeof(float));
+        Mat satmtx(3, 3, CV_32FC1, satbuf);
+        float st_alpha = urand_zcent(0.4);
+        // float br_alpha = urand_zcent(0.4) + 1;
+        // satmtx = br_alpha * ((Mat::eye(3, 3, CV_32FC1) - satmtx) * st_alpha + satmtx);
+        satmtx = (st_alpha * Mat::eye(3, 3, CV_32FC1) + (1.0 - st_alpha) * satmtx);
+        Mat saturated;
+        cv::transform(flippedImg, saturated, satmtx);
+        cout << st_alpha << " " << satmtx << endl;
+        // Mat smat = flippedImg.reshape(1, flippedImg.rows * flippedImg.cols);
+        // smat = smat.t() * satmtx.t();
+        // float contrast = urand_zcent(_ip_contrastRange);
+        // float brightness = urand_zcent(_ip_brightnessRange);
+        // if (contrast != 0 || brightness != 0) {
+        //     flippedImg.convertTo(flippedImg, -1, 1.0f + contrast, 127.0 * brightness);
+        // }
 
         /*************
         *  RESIZING  *
         *************/
-        bool doEnlarge = flippedImg.size().area() / _outSize.area() > 1.0;
-        resize(flippedImg, outMat, _outSize, 0, 0, doEnlarge ? CV_INTER_AREA : CV_INTER_CUBIC);
+        resize(saturated, outMat, _outSize, 0, 0, doEnlarge ? CV_INTER_AREA : CV_INTER_CUBIC);
     }
 
     void getCropBox(Size2f inSize, Rectf &cropBox) {
