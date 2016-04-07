@@ -39,7 +39,7 @@ float GSCL[3][3] = {{0.114, 0.587, 0.299},
                     {0.114, 0.587, 0.299},
                     {0.114, 0.587, 0.299}};
 
-
+float GSC[3] = {0.114, 0.587, 0.299};
 
 class ImageParams : public MediaParams {
 public:
@@ -129,6 +129,8 @@ public:
         default_random_engine generator(seed1);
         uniform_real_distribution<float> distribution(0.0, 1.0);
         _rng = std::bind(distribution, generator);
+        theRNG().state = chrono::system_clock::now().time_since_epoch().count();
+
     }
 
     float urand(float low, float high) {
@@ -186,28 +188,21 @@ public:
         /**************************
         *  LIGHTING PERTURBATION  *
         ***************************/
-
-        float pxnoise[3];
-        pxnoise[0] = urand_zcent(0.5);
-        pxnoise[1] = urand_zcent(0.5);
-        pxnoise[2] = urand_zcent(0.5);
-        const Mat cpca(3, 3, CV_32FC1, CPCA);
-        Mat alphas(3, 1, CV_32FC1, pxnoise);
-        alphas = cpca * alphas;
+        Mat alphas(3, 1, CV_32FC1);
+        theRNG().fill(alphas, RNG::NORMAL, 0.0, 0.1);
+        alphas = Mat(3, 3, CV_32FC1, CPCA) * alphas;
         Mat pixel = alphas.reshape(3, 1);
         flippedImg = (flippedImg + pixel.at<Scalar_<float>>(0, 0));
 
         // Brightness and saturation
-        float satbuf[3][3];
-        memcpy(satbuf, GSCL, 9 * sizeof(float));
-        Mat satmtx(3, 3, CV_32FC1, satbuf);
-        float st_alpha = urand_zcent(0.4);
-        // float br_alpha = urand_zcent(0.4) + 1;
-        // satmtx = br_alpha * ((Mat::eye(3, 3, CV_32FC1) - satmtx) * st_alpha + satmtx);
-        satmtx = (st_alpha * Mat::eye(3, 3, CV_32FC1) + (1.0 - st_alpha) * satmtx);
-        Mat saturated;
-        cv::transform(flippedImg, saturated, satmtx);
-        cout << st_alpha << " " << satmtx << endl;
+        Mat hsv = Mat(3, 1, CV_32FC1);
+        theRNG().fill(hsv, RNG::UNIFORM, 0.6, 1.4);
+
+        Mat satmtx = Mat::ones(3, 1, CV_32FC1) * Mat(1, 3, CV_32FC1, GSC);
+        satmtx = hsv.at<float>(0) * ((Mat::eye(3, 3, CV_32FC1) - satmtx) * hsv.at<float>(1) + satmtx);
+        cv::transform(flippedImg, flippedImg, satmtx);
+
+        cout "Iter:" << endl << hsv << endl << satmtx << endl;
         // Mat smat = flippedImg.reshape(1, flippedImg.rows * flippedImg.cols);
         // smat = smat.t() * satmtx.t();
         // float contrast = urand_zcent(_ip_contrastRange);
@@ -219,7 +214,7 @@ public:
         /*************
         *  RESIZING  *
         *************/
-        resize(saturated, outMat, _outSize, 0, 0, doEnlarge ? CV_INTER_AREA : CV_INTER_CUBIC);
+        resize(flippedImg, outMat, _outSize, 0, 0, doEnlarge ? CV_INTER_AREA : CV_INTER_CUBIC);
     }
 
     void getCropBox(Size2f inSize, Rectf &cropBox) {
