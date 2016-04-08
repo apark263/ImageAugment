@@ -27,19 +27,13 @@ public:
     int                         _mtype;
 };
 
-float CPCA[3][3] = {{0.39731118,  0.70119634, -0.59200296},
+float _CPCA[3][3] = {{0.39731118,  0.70119634, -0.59200296},
                     {-0.81698062, -0.02354167, -0.5761844},
                     {0.41795513, -0.71257945, -0.56351045}};
+const Mat CPCA(3, 3, CV_32FC1, _CPCA);
+const Mat CSTD(3, 1, CV_32FC1, {19.72083305, 37.09388853, 121.78006099});
+const Mat GSCL(3, 1, CV_32FC1, {0.114, 0.587, 0.299});
 
-float CSTD[3][3] = {{19.72083305, 0, 0},
-                    {0, 37.09388853, 0},
-                    {0, 0, 121.78006099}};
-
-float GSCL[3][3] = {{0.114, 0.587, 0.299},
-                    {0.114, 0.587, 0.299},
-                    {0.114, 0.587, 0.299}};
-
-float GSC[3] = {0.114, 0.587, 0.299};
 
 class ImageParams : public MediaParams {
 public:
@@ -52,9 +46,6 @@ public:
                       {"angleRange", 0}, {"fixedScale", 0},
                       {"R_mean", 104}, {"G_mean", 119}, {"B_mean", 127},
                       {"matchAspectRatio", 0}};
-        Mat cpca(3, 3, CV_32FC1, CPCA);
-        Mat cstd(3, 3, CV_32FC1, CSTD);
-        cpca *= cstd;
         // _lgt = new Mat(3, 3, CV_32FC1, CPCA);
         // Mat aa(3, 3, CV_32FC1, CSTD);
         // (*_lgt) *= aa;
@@ -190,26 +181,30 @@ public:
         ***************************/
         Mat alphas(3, 1, CV_32FC1);
         theRNG().fill(alphas, RNG::NORMAL, 0.0, 0.1);
-        alphas = Mat(3, 3, CV_32FC1, CPCA) * alphas;
-        Mat pixel = alphas.reshape(3, 1);
-        flippedImg = (flippedImg + pixel.at<Scalar_<float>>(0, 0));
+        alphas = (CPCA * CSTD.mul(alphas));  // this is the random intensity pixel
+        auto pixel = alphas.reshape(3, 1).at<Scalar_<float>>(0, 0);
 
-        // Brightness and saturation
-        Mat hsv = Mat(3, 1, CV_32FC1);
-        theRNG().fill(hsv, RNG::UNIFORM, 0.6, 1.4);
+        flippedImg += pixel;
 
-        Mat satmtx = Mat::ones(3, 1, CV_32FC1) * Mat(1, 3, CV_32FC1, GSC);
-        satmtx = hsv.at<float>(0) * ((Mat::eye(3, 3, CV_32FC1) - satmtx) * hsv.at<float>(1) + satmtx);
+        /****************************
+        *  BRIGHTNESS & SATURATION  *
+        *****************************/
+        float s_scale = theRNG().uniform(0.6f, 1.4f);
+        float b_scale = theRNG().uniform(0.6f, 1.4f);
+        Mat satmtx = b_scale * (s_scale * Mat::eye(3, 3, CV_32FC1) +
+                                (1 - s_scale) * Mat::ones(3, 1, CV_32FC1) * GSCL.t());
+
         cv::transform(flippedImg, flippedImg, satmtx);
 
-        cout "Iter:" << endl << hsv << endl << satmtx << endl;
-        // Mat smat = flippedImg.reshape(1, flippedImg.rows * flippedImg.cols);
-        // smat = smat.t() * satmtx.t();
-        // float contrast = urand_zcent(_ip_contrastRange);
-        // float brightness = urand_zcent(_ip_brightnessRange);
-        // if (contrast != 0 || brightness != 0) {
-        //     flippedImg.convertTo(flippedImg, -1, 1.0f + contrast, 127.0 * brightness);
-        // }
+        /*************
+        *  CONTRAST  *
+        **************/
+        float c_scale = theRNG().uniform(0.6f, 1.4f);
+        Mat gray_mean;
+        cvtColor(Mat(1, 1, CV_32FC3, cv::mean(flippedImg)), gray_mean, CV_BGR2GRAY);
+
+        flippedImg = c_scale * flippedImg + (1 - c_scale) * gray_mean.at<Scalar_<float>>(0, 0);
+
 
         /*************
         *  RESIZING  *
